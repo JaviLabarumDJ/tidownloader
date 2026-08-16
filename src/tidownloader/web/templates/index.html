@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en" data-theme="dark-cyan">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>tidownloader</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+</head>
+<body>
+
+  <!-- Animated background mesh -->
+  <div class="bg-mesh" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="app">
+
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 32 32">
+            <defs>
+              <linearGradient id="brandG" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="currentColor" stop-opacity="1"/>
+                <stop offset="1" stop-color="currentColor" stop-opacity="0.7"/>
+              </linearGradient>
+            </defs>
+            <g fill="url(#brandG)">
+              <rect x="4"  y="11" width="3.5" height="10" rx="1.75"/>
+              <rect x="10" y="6"  width="3.5" height="20" rx="1.75"/>
+              <rect x="16" y="11" width="3.5" height="10" rx="1.75"/>
+              <rect x="22" y="8"  width="3.5" height="16" rx="1.75"/>
+            </g>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">tidownloader</span>
+          <span class="brand-version">v{{ version }}</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-tab="queue" data-i18n-aria="nav.queue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12h4l3-9 4 18 3-9h4"/>
+          </svg>
+          <span data-i18n="nav.queue">Queue</span>
+        </button>
+        <button class="nav-item" data-tab="files" data-i18n-aria="nav.library">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span data-i18n="nav.library">Library</span>
+        </button>
+        <button class="nav-item" data-tab="settings" data-i18n-aria="nav.settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span data-i18n="nav.settings">Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="login-card">
+          <div id="auth-status" class="login-status">
+            <div class="login-dot"></div>
+            <span class="login-text" data-i18n="auth.checking">Checking…</span>
+          </div>
+          <button id="login-btn" class="btn btn-primary btn-sm" data-i18n="auth.login">Log in</button>
+        </div>
+
+        <div class="theme-switcher">
+          <span class="theme-label" data-i18n="sidebar.theme">Theme</span>
+          <div class="theme-swatches" id="theme-swatches"></div>
+        </div>
+
+        <div class="locale-switcher">
+          <span class="theme-label" data-i18n="sidebar.language">Language</span>
+          <div class="locale-options" id="locale-options"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+
+      <!-- Top bar -->
+      <header class="topbar">
+        <div class="page-title">
+          <h1 id="page-title" data-i18n="page.queue.title">Queue</h1>
+          <p id="page-subtitle" class="page-subtitle" data-i18n="page.queue.subtitle">Active and completed downloads</p>
+        </div>
+        <div class="topbar-right">
+          <span id="live-indicator" class="live-indicator">
+            <span class="live-dot"></span>
+            <span data-i18n="live.indicator">Live</span>
+          </span>
+        </div>
+      </header>
+
+      <!-- QUEUE -->
+      <section class="panel active" id="panel-queue">
+
+        <!-- Hero add form -->
+        <div class="card add-card">
+          <div class="add-header">
+            <div class="add-title-wrap">
+              <div class="add-title-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="16"/>
+                  <line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+              </div>
+              <div>
+                <h2 class="add-title" data-i18n="add.title">Add to queue</h2>
+                <p class="add-subtitle" data-i18n="add.subtitle">Paste a link or search Tidal for what you want.</p>
+              </div>
+            </div>
+            <div class="input-mode-toggle">
+              <button type="button" class="mode-btn active" data-mode="url">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span data-i18n="add.mode.url">Paste URL</span>
+              </button>
+              <button type="button" class="mode-btn" data-mode="search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <span data-i18n="add.mode.search">Search Tidal</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- URL MODE -->
+          <form id="add-form" class="add-form active" data-mode-panel="url">
+            <div class="field field-grow">
+              <label for="url">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span data-i18n="add.url.label">Tidal URL</span>
+              </label>
+              <input id="url" type="url" required autocomplete="off"
+                     placeholder="https://tidal.com/playlist/..."
+                     data-i18n-placeholder="add.url.placeholder" />
+            </div>
+            <div class="field field-quality">
+              <label for="quality" data-i18n="add.quality.label">Quality</label>
+              <select id="quality">
+                {% for q in qualities %}
+                  <option value="{{ q.key }}" data-desc="{{ q.description }}">{{ q.label.replace(" — recommended", "") }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-large">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+              <span data-i18n="add.submit">Add to queue</span>
+            </button>
+          </form>
+          <p id="quality-hint" class="quality-hint-row"></p>
+
+          <!-- SEARCH MODE -->
+          <div id="search-panel" class="search-panel" data-mode-panel="search">
+            <div class="search-bar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input id="search-input" type="search" autocomplete="off"
+                     placeholder="Search Tidal · artist, track, album, playlist…"
+                     data-i18n-placeholder="add.search.placeholder" />
+              <span id="search-spinner" class="search-spinner" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+              </span>
+            </div>
+            <div id="search-filter-bar" class="search-filter-bar"></div>
+            <div id="search-results" class="search-results"></div>
+          </div>
+
+          <details class="advanced">
+            <summary>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-i18n="add.advanced">Advanced options</span>
+            </summary>
+            <div class="field" style="margin-top:14px">
+              <label for="download_path" data-i18n="add.advanced.path.label">Custom download path (optional)</label>
+              <input id="download_path" type="text" placeholder="/downloads" />
+              <small class="field-hint" data-i18n="add.advanced.path.hint">Inside Docker, paths must live inside a bind-mounted volume.</small>
+            </div>
+          </details>
+        </div>
+
+        <!-- Jobs -->
+        <div class="jobs-list" id="jobs-list"></div>
+
+      </section>
+
+      <!-- FILES -->
+      <section class="panel" id="panel-files">
+        <div class="card">
+          <div class="card-header">
+            <h2>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span data-i18n="library.title">Library</span>
+            </h2>
+            <div class="header-actions" style="gap:12px;align-items:center">
+              <div class="search-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input id="files-search" type="search"
+                       data-i18n-placeholder="library.filter" />
+              </div>
+              <button class="btn btn-ghost btn-sm" id="refresh-files"
+                      data-i18n-title="library.refresh" title="Refresh">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+            </div>
+          </div>
+          <p class="hint" id="files-root-hint"></p>
+          <div id="files-tree" class="files-tree"></div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="panel" id="panel-settings">
+
+        <div class="card">
+          <div class="card-header">
+            <h2>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              <span data-i18n="settings.title">Preferences</span>
+            </h2>
+            <div class="header-actions">
+              <button id="save-settings" class="btn btn-primary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                <span data-i18n="settings.save">Save</span>
+              </button>
+              <button id="reset-settings" class="btn btn-ghost btn-sm"
+                      data-i18n="settings.reset">Reset</button>
+            </div>
+          </div>
+          <p class="hint" style="margin:0 0 16px 0" data-i18n="settings.note">Changes apply to new jobs.</p>
+          <div id="settings-form" class="settings-form"></div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- Login modal -->
+  <div id="login-modal" class="modal hidden" aria-modal="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" id="login-close"
+              data-i18n-aria="modal.close" aria-label="Close">×</button>
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+          <polyline points="10 17 15 12 10 7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        <span data-i18n="login.title">Link your Tidal account</span>
+      </h3>
+      <ol class="login-steps">
+        <li><span data-i18n="login.step1">Visit</span> <a id="login-url" target="_blank" rel="noopener"></a></li>
+        <li data-i18n="login.step2">Enter the code below</li>
+        <li data-i18n="login.step3">Approve on the website</li>
+      </ol>
+      <pre id="login-code" class="login-code"></pre>
+      <p class="hint" id="login-hint" data-i18n="login.waiting">Waiting for authorization…</p>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-narrow">
+      <h3 id="confirm-title" data-i18n="confirm.title">Are you sure?</h3>
+      <p id="confirm-message" class="hint"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="confirm-cancel"
+                data-i18n="confirm.cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok"
+                data-i18n="confirm.ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='i18n.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

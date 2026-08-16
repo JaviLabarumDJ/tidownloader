@@ -1,0 +1,24 @@
+services:
+  tidownloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tidownloader:latest
+    container_name: tidownloader
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=UTC
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persisted downloads. Change the host path to wherever you want them.
+      - ./downloads:/downloads
+      # Persisted session + queue. Survives `docker compose down`.
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

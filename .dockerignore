@@ -1,0 +1,22 @@
+.venv/
+.venv/*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Project artifacts (mounted by docker-compose instead)
+downloads/
+data/
+
+.git/
+.gitignore
+.dockerignore
+README.md
+tests/
