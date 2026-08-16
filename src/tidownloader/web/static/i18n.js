@@ -138,7 +138,21 @@ const I18N = {
     // Keyboard hints (title attributes)
     "kbd.focusInput":       "Focus URL field",
 
-    // Months / dates? Reserved for future
+    // Local folder sync
+    "localFolder.title":       "Local folder",
+    "localFolder.help":        "Pick a folder on your computer and downloaded files appear there automatically.",
+    "localFolder.pick":        "Choose folder…",
+    "localFolder.unlink":      "Unlink",
+    "localFolder.syncNow":     "Sync all now",
+    "localFolder.notLinked":   "Not linked.",
+    "localFolder.linked":      "Linked to ",
+    "localFolder.unsupported": "Your browser doesn't support picking folders natively. Try Chrome, Edge or Firefox.",
+    "localFolder.permission":  "Permission denied. Click again and grant access.",
+    "localFolder.syncedOne":  "Synced 1 file to local folder",
+    "localFolder.syncedMany": "Synced {count} files to local folder",
+    "localFolder.syncFailed":  "Could not sync — permission may have been revoked.",
+    "localFolder.syncing":     "Syncing…",
+    "localFolder.pickFailed":  "Could not open folder picker.",
   },
 
   es: {
@@ -264,6 +278,22 @@ const I18N = {
     "modal.close":          "Cerrar",
 
     "kbd.focusInput":       "Foco en el campo de URL",
+
+    // Local folder sync
+    "localFolder.title":       "Carpeta local",
+    "localFolder.help":        "Elige una carpeta en tu ordenador y los archivos descargados aparecerán ahí automáticamente.",
+    "localFolder.pick":        "Elegir carpeta…",
+    "localFolder.unlink":      "Desvincular",
+    "localFolder.syncNow":     "Sincronizar todo",
+    "localFolder.notLinked":   "Sin vincular.",
+    "localFolder.linked":      "Vinculado a ",
+    "localFolder.unsupported": "Tu navegador no permite elegir carpetas. Prueba Chrome, Edge o Firefox.",
+    "localFolder.permission":  "Permiso denegado. Pulsa otra vez y concede acceso.",
+    "localFolder.syncedOne":  "1 archivo sincronizado a la carpeta local",
+    "localFolder.syncedMany": "{count} archivos sincronizados a la carpeta local",
+    "localFolder.syncFailed":  "No se pudo sincronizar — puede que se haya revocado el permiso.",
+    "localFolder.syncing":     "Sincronizando…",
+    "localFolder.pickFailed":  "No se pudo abrir el selector de carpetas.",
   },
 };
 

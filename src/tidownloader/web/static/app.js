@@ -17,6 +17,8 @@ const STATE = {
   // Job DOM cache — patched in place rather than rebuilt.
   jobNodes: new Map(),
   currentJobsById: new Map(),
+  // Per-track sync tracking for the local folder.
+  syncedFiles: new Set(JSON.parse(localStorage.getItem("td-synced") || "[]")),
   pollTimer: null,
 };
 
@@ -669,6 +671,51 @@ function toggleTracks(jobId) {
   if (j) patchJob(j, STATE.jobNodes.get(jobId));
 }
 
+// Track which files have been synced to the local folder so we don't
+// re-copy them on every poll.
+function syncKeyFor(t) {
+  // The track object doesn't include the file path, only metadata.
+  // We key by trackId so retries are safe.
+  return `track:${t.track_id}`;
+}
+function syncNewlyCompletedTracks(tracks) {
+  if (!LocalFolder.isLinked()) return;
+  for (const t of tracks) {
+    if (t.status !== "done") continue;
+    const key = syncKeyFor(t);
+    if (STATE.syncedFiles.has(key)) continue;
+    STATE.syncedFiles.add(key);
+    persistSyncedFiles();
+    // We don't know the file path from the track payload. Build it
+    // the same way the server does — by hitting /api/files for the job's
+    // folder structure, or by guessing. Simpler: call a small endpoint
+    // that returns { track_id: path } map.
+    syncTrackToLocal(t, key);
+  }
+}
+function persistSyncedFiles() {
+  try {
+    localStorage.setItem("td-synced", JSON.stringify([...STATE.syncedFiles]));
+  } catch {}
+}
+async function syncTrackToLocal(t, key) {
+  // Look up the file's relative path via /api/files (cheaper than a
+  // separate endpoint). We do a best-effort filename match: the file
+  // we want is the one in the job's folder whose name starts with the
+  // track number and contains the title.
+  try {
+    const filesRes = await fetch("/api/files");
+    const files = await filesRes.json();
+    const match = files.find((f) => f.path.includes(`/${t.title}`));
+    if (match) {
+      await LocalFolder.syncOne(match.path);
+    }
+  } catch (e) {
+    STATE.syncedFiles.delete(key);
+    persistSyncedFiles();
+  }
+}
+
 function buildTrackRow(t) {
   const row = document.createElement("div");
   row.className = "track-row";
@@ -768,6 +815,9 @@ function patchJob(j, refs) {
       entry.fill.style.width = pctValue + "%";
       setText(entry.pct, pctValue + "%");
     });
+
+    // Auto-sync newly completed tracks to the user's local folder.
+    syncNewlyCompletedTracks(tracks);
     // Remove track rows that no longer exist
     for (const [tid, entry] of refs.trackNodes) {
       if (!seenIds.has(tid)) {
@@ -1180,7 +1230,105 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ---------- Local folder sync ----------
+
+function renderLocalFolderStatus() {
+  const dot = $("#local-folder-dot");
+  const text = $("#local-folder-text");
+  const pickBtn = $("#pick-local-folder");
+  const syncBtn = $("#sync-local-folder");
+  const forgetBtn = $("#forget-local-folder");
+
+  if (!LocalFolder.supported) {
+    dot.className = "local-folder-dot unavailable";
+    text.textContent = t("localFolder.unsupported");
+    text.className = "local-folder-text idle";
+    pickBtn.disabled = true;
+    syncBtn.hidden = true;
+    forgetBtn.hidden = true;
+    return;
+  }
+
+  pickBtn.disabled = false;
+  if (LocalFolder.isLinked()) {
+    dot.className = "local-folder-dot linked";
+    text.textContent = t("localFolder.linked") + LocalFolder.name;
+    text.className = "local-folder-text";
+    pickBtn.querySelector("span").textContent = t("localFolder.pick").replace("…", "");
+    syncBtn.hidden = false;
+    forgetBtn.hidden = false;
+  } else {
+    dot.className = "local-folder-dot";
+    text.textContent = t("localFolder.notLinked");
+    text.className = "local-folder-text idle";
+    syncBtn.hidden = true;
+    forgetBtn.hidden = true;
+  }
+}
+
+$("#pick-local-folder").addEventListener("click", async () => {
+  try {
+    await LocalFolder.pick();
+    renderLocalFolderStatus();
+    toast(t("localFolder.linked") + LocalFolder.name, "success");
+  } catch (e) {
+    console.warn("local folder pick failed:", e);
+    toast(t("localFolder.pickFailed"), "error");
+  }
+});
+
+$("#forget-local-folder").addEventListener("click", async () => {
+  await LocalFolder.forget();
+  renderLocalFolderStatus();
+  toast(t("localFolder.unlink"), "success");
+});
+
+$("#sync-local-folder").addEventListener("click", async () => {
+  if (!LocalFolder.isLinked()) return;
+  const btn = $("#sync-local-folder");
+  const progressEl = $("#local-folder-progress");
+  const fillEl = $("#local-folder-fill");
+  const textEl = $("#local-folder-progress-text");
+
+  btn.disabled = true;
+  progressEl.hidden = false;
+  fillEl.style.width = "0%";
+  textEl.textContent = t("localFolder.syncing");
+
+  try {
+    const filesRes = await fetch("/api/files");
+    const allFiles = await filesRes.json();
+    if (!allFiles.length) {
+      progressEl.hidden = true;
+      toast(t("library.empty.body"), "warn");
+      return;
+    }
+    let done = 0;
+    const total = allFiles.length;
+    for (const f of allFiles) {
+      try {
+        await LocalFolder.syncOne(f.path);
+        done++;
+        fillEl.style.width = Math.round((done / total) * 100) + "%";
+        textEl.textContent = `${done} / ${total}`;
+      } catch (e) {
+        console.warn("sync failed:", f.path, e);
+      }
+    }
+    fillEl.style.width = "100%";
+    toast(t("localFolder.syncedMany", { count: done }), "success");
+  } catch (e) {
+    console.error(e);
+    toast(t("localFolder.syncFailed"), "error");
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { progressEl.hidden = true; }, 1500);
+  }
+});
+
 // ---------- Init ----------
 
 loadThemes();
 refreshAuth();
+LocalFolder.restore().then(() => renderLocalFolderStatus());
+renderLocalFolderStatus();

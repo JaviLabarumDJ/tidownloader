@@ -40,6 +40,8 @@
 - 🚀 **Concurrent downloads** within a job (1–4 tracks in parallel)
 - 🐳 **Docker Compose ready** — bind mounts for downloads, queue, and session
 - 🔒 **OAuth device-link login** — no passwords stored, uses your Tidal subscription
+- 📂 **Local folder sync** — pick a folder on your computer with the browser's native picker; finished files land there automatically
+- 🌐 **Browser-native folder picker** via the File System Access API (Chrome, Edge, Firefox 111+, Safari)
 - 💾 **Stateful queue** — survives container restarts (SQLite)
 - 🎵 **Metadata tagging** — ID3v2 for MP3, FLAC tags for lossless, MP4 atoms for M4A
 - 🖼️ **Cover art** embedded + sidecar `cover.jpg` per album
@@ -59,7 +61,19 @@
 <p align="center"><img src="docs/screenshots/library.png" alt="Library"></p>
 
 ### Settings — minimal essential fields, advanced collapsible
-<p align="center"><img src="docs/screenshots/settings.png" alt="Settings"></p>
+<p align="center"><img src="docs/screenshots/settings-with-folder.png" alt="Settings"></p>
+
+## 📂 Local folder
+
+The web UI lets you **pick a folder on your computer** using the browser's native dialog (the same one you see when you do File → Open Folder in your OS). Files that finish downloading are then synced there automatically.
+
+- Open **Settings → Local folder → Choose folder…**
+- Your browser shows its native folder picker (Chrome, Edge, Firefox 111+, Safari)
+- Pick any folder on your machine — it's remembered across page reloads (stored in IndexedDB)
+- As each track completes, the app fetches it from the server and writes it to your folder
+- **Sync all now** copies every existing file in one click
+
+> **Note**: the sync happens client-side. The Docker container still does the actual download (FLAC decryption, MP3 transcode, etc.) — the local folder is just where the finished files end up.
 
 ### Themes — 5 variants, pick your vibe
 

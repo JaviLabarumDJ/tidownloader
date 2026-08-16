@@ -268,6 +268,40 @@ def test_job_payload_includes_tracks_list(client):
     assert isinstance(job["tracks"], list)
 
 
+def test_local_folder_js_loaded_with_browser_api(client):
+    """The local-folder.js bundle uses the File System Access API."""
+    res = client.get("/static/local-folder.js")
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert "showDirectoryPicker" in body
+    assert "createWritable" in body
+
+
+def test_settings_page_renders_local_folder_card(client):
+    """The Settings page has the local folder picker card."""
+    res = client.get("/")
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert "local-folder-card" in body
+    assert "pick-local-folder" in body
+    assert "sync-local-folder" in body
+    assert "forget-local-folder" in body
+
+
+def test_i18n_js_is_served_with_both_locales(client):
+    """i18n.js is served and contains both languages."""
+    res = client.get("/static/i18n.js")
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert "I18N" in body
+    assert "AVAILABLE_LOCALES" in body
+    # The ES locale block exists (key is `es:` without quotes).
+    assert "es: {" in body
+    assert "en: {" in body
+    # And the new local-folder keys made it in.
+    assert "localFolder.pick" in body
+
+
 def test_settings_put_updates(client):
     res = client.put(
         "/api/settings",
