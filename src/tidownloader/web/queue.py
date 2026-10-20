@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import tidalapi
+import requests
 
 from .. import api, auth, downloader
 from ..api import TrackInfo, resolve_url
@@ -268,9 +269,79 @@ class JobQueue:
                 (payload, _now(), job_id),
             )
 
+    def retry_failed(self, job_id: int) -> Optional[Job]:
+        job = self.get(job_id)
+        if not job:
+            return None
+        tracks = list(job.tracks)
+        reset_count = 0
+        for t in tracks:
+            if t.get("status") == "failed":
+                t["status"] = "pending"
+                t["error"] = ""
+                t["progress_pct"] = 0
+                reset_count += 1
+        if reset_count > 0:
+            self.update_tracks(job_id, tracks)
+            self.update(job_id, status="pending", error="", failed=0)
+        else:
+            self.update(job_id, status="pending", error="")
+        return self.get(job_id)
+
     def delete(self, job_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+
+def _send_webhook(cfg: Config, job: Job, status: str) -> None:
+    """Send asynchronous webhook notification (Discord, Slack, Gotify, generic)."""
+    if not cfg.webhook_enabled or not cfg.webhook_url:
+        return
+
+    def _worker():
+        try:
+            color = 0x00D4C5 if status == "done" else 0xE05252
+            title = f"TiDownloader: {job.name or 'Download'} ({status.upper()})"
+            desc = (
+                f"**Status:** {status}\n"
+                f"**Downloaded:** {job.downloaded}/{job.total_tracks}\n"
+                f"**Skipped:** {job.skipped}\n"
+                f"**Failed:** {job.failed}"
+            )
+            if job.error:
+                desc += f"\n**Error:** {job.error}"
+
+            payload = {
+                "content": f"{title} — {job.downloaded}/{job.total_tracks} tracks completed.",
+                "username": "TiDownloader",
+                "title": title,
+                "message": desc,
+                "priority": 5 if status == "done" else 8,
+                "embeds": [
+                    {
+                        "title": title,
+                        "description": desc,
+                        "color": color,
+                        "footer": {"text": "TiDownloader"},
+                    }
+                ],
+                "job": {
+                    "id": job.id,
+                    "url": job.url,
+                    "name": job.name,
+                    "status": status,
+                    "downloaded": job.downloaded,
+                    "skipped": job.skipped,
+                    "failed": job.failed,
+                    "total_tracks": job.total_tracks,
+                },
+            }
+            requests.post(cfg.webhook_url, json=payload, timeout=10)
+            LOG.debug("Webhook sent successfully to %s", cfg.webhook_url)
+        except Exception as exc:
+            LOG.warning("Failed to send webhook to %s: %s", cfg.webhook_url, exc)
+
+    threading.Thread(target=_worker, name="td-webhook", daemon=True).start()
 
 
 def _now() -> str:
@@ -284,6 +355,13 @@ class Worker:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._wake = threading.Event()
+        self._cancelled_jobs: set[int] = set()
+        self._lock = threading.Lock()
+
+    def cancel(self, job_id: int) -> None:
+        with self._lock:
+            self._cancelled_jobs.add(job_id)
+        LOG.info("Requested cancellation of job %d", job_id)
 
     def start(self) -> None:
         if self._thread is not None:
@@ -364,15 +442,33 @@ class Worker:
 
         is_playlist = "playlist" in job.url
 
-        # Build per-track progress list.
-        track_progresses: list[TrackProgress] = [
-            TrackProgress(
-                track_id=t.track_id,
-                title=t.title,
-                artists=list(t.artists),
-            )
-            for t in tracks_meta
-        ]
+        # Build per-track progress list (preserving any already done/skipped tracks from prior run).
+        existing_tracks = {t.get("track_id"): t for t in job.tracks if isinstance(t, dict)}
+        track_progresses: list[TrackProgress] = []
+        for t in tracks_meta:
+            prev = existing_tracks.get(t.track_id)
+            if prev and prev.get("status") in ("done", "skipped"):
+                tp = TrackProgress(
+                    track_id=t.track_id,
+                    title=t.title,
+                    artists=list(t.artists),
+                    status=prev.get("status"),
+                    progress_pct=prev.get("progress_pct", 100),
+                )
+            else:
+                tp = TrackProgress(
+                    track_id=t.track_id,
+                    title=t.title,
+                    artists=list(t.artists),
+                )
+            track_progresses.append(tp)
+
+        downloaded = sum(1 for t in track_progresses if t.status == "done")
+        skipped = sum(1 for t in track_progresses if t.status == "skipped")
+        failed = sum(1 for t in track_progresses if t.status == "failed")
+        last_error = ""
+        lock = threading.Lock()
+        job_started_at = datetime.now().timestamp()
 
         self.queue.update(
             job.id,
@@ -381,19 +477,12 @@ class Worker:
             total_tracks=len(tracks_meta),
             current_track="",
             current_track_index=0,
-            downloaded=0,
-            skipped=0,
-            failed=0,
+            downloaded=downloaded,
+            skipped=skipped,
+            failed=failed,
             error="",
         )
         self.queue.update_tracks(job.id, [t.to_dict() for t in track_progresses])
-
-        downloaded = 0
-        skipped = 0
-        failed = 0
-        last_error = ""
-        lock = threading.Lock()
-        job_started_at = datetime.now().timestamp()
 
         def _save_track(idx: int, **fields: Any) -> None:
             for k, v in fields.items():
@@ -410,7 +499,16 @@ class Worker:
 
         def _per_track(idx: int, track: TrackInfo) -> None:
             nonlocal downloaded, skipped, failed, last_error
+            with self._lock:
+                if job.id in self._cancelled_jobs or self._stop.is_set():
+                    return
+            if not self.queue.get(job.id):
+                return
+
             tp = track_progresses[idx]
+            if tp.status in ("done", "skipped"):
+                return
+
             with lock:
                 tp.status = "downloading"
                 tp.progress_pct = 0
@@ -468,6 +566,9 @@ class Worker:
         workers = max(1, min(cfg.concurrent_downloads, len(tracks_meta)))
         if workers == 1:
             for i, t in enumerate(tracks_meta):
+                with self._lock:
+                    if job.id in self._cancelled_jobs or self._stop.is_set():
+                        break
                 _per_track(i, t)
         else:
             from concurrent.futures import ThreadPoolExecutor
@@ -475,6 +576,12 @@ class Worker:
                 futures = [pool.submit(_per_track, i, t) for i, t in enumerate(tracks_meta)]
                 for f in futures:
                     f.result()
+
+        with self._lock:
+            if job.id in self._cancelled_jobs:
+                self._cancelled_jobs.discard(job.id)
+                LOG.info("Job %d was cancelled; skipping completion updates", job.id)
+                return
 
         if cfg.create_m3u8 and is_playlist and tracks_meta:
             try:
@@ -493,6 +600,9 @@ class Worker:
                 current_track_index=len(tracks_meta),
                 error=last_error if final_status == "error" else "",
             )
+            updated_job = self.queue.get(job.id)
+            if updated_job:
+                _send_webhook(cfg, updated_job, final_status)
 
     def _write_m3u8(self, cfg: Config, name: str, tracks: list[TrackInfo]) -> None:
         from ..metadata import write_m3u8

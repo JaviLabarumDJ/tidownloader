@@ -90,10 +90,18 @@ const I18N = {
     "settings.speedHint":   "Concurrency is throttled by Tidal above ~4 tracks.",
     "settings.behaviour":   "Behaviour",
     "settings.behaviourHint":"Mostly leave these alone unless something's wrong.",
+    "settings.notifications": "Notifications",
+    "settings.notificationsHint":"Send alerts to Discord, Slack, Gotify, or generic webhooks when jobs complete.",
+    "settings.testWebhook":   "Test webhook",
+    "settings.testingWebhook":"Testing…",
+    "settings.webhookSuccess":"Webhook test sent successfully!",
+    "settings.webhookFailed": "Webhook test failed",
+    "settings.webhookUrlRequired":"Enter a webhook URL first",
     "settings.advanced":    "Advanced settings",
 
     // Toasts
     "toast.addedQueue":     "Added to queue",
+    "toast.batchAdded":     "Added {count} downloads to queue",
     "toast.queueFailed":    "Failed to add job",
     "toast.queued":         "Queued \"{title}\"",
     "toast.loadedPreview":  "Loaded \"{title}\" — press Queue",
@@ -104,14 +112,22 @@ const I18N = {
     "toast.signoutConfirm": "You'll need to log in again to use the app. Continue?",
     "toast.jobRemoved":     "Job removed",
     "toast.requeued":       "Re-queued",
+    "toast.retryFailed":    "Re-queued failed tracks",
     "toast.saveFailed":     "Failed to save settings",
     "toast.resetFailed":    "Failed to reset",
+
+    // Notifications (Desktop)
+    "notification.doneTitle":  "Download complete",
+    "notification.doneBody":   "Finished {title} ({count} tracks)",
+    "notification.errorTitle": "Download error",
+    "notification.errorBody":  "Error in {title}: {error}",
 
     // Auth status labels
     "auth.status.notLogged":"Not signed in",
     "auth.status.logged":  "Logged in",
 
     // Job cards
+    "job.retryFailed":          "Retry failed tracks only",
     "job.error.removeJob":      "Remove this job from the queue?",
     "job.run":                  "{done}/{total}",
     "job.failedSuffix":         "· {n} failed",
@@ -237,9 +253,17 @@ const I18N = {
     "settings.speedHint":   "Tidal limita a ~4 descargas simultáneas.",
     "settings.behaviour":   "Comportamiento",
     "settings.behaviourHint":"Normalmente no hace falta cambiar nada aquí.",
+    "settings.notifications": "Notificaciones",
+    "settings.notificationsHint":"Envía avisos a Discord, Slack, Gotify o webhooks al terminar las descargas.",
+    "settings.testWebhook":   "Probar webhook",
+    "settings.testingWebhook":"Probando…",
+    "settings.webhookSuccess":"¡Prueba de webhook enviada correctamente!",
+    "settings.webhookFailed": "Error en la prueba de webhook",
+    "settings.webhookUrlRequired":"Introduce una URL de webhook primero",
     "settings.advanced":    "Opciones avanzadas",
 
     "toast.addedQueue":     "Añadido a la cola",
+    "toast.batchAdded":     "Añadidas {count} descargas a la cola",
     "toast.queueFailed":    "No se pudo añadir el job",
     "toast.queued":         "En cola: \"{title}\"",
     "toast.loadedPreview":  "Cargado \"{title}\" — pulsa Añadir",
@@ -250,12 +274,20 @@ const I18N = {
     "toast.signoutConfirm": "Tendrás que volver a iniciar sesión para usar la app. ¿Continuar?",
     "toast.jobRemoved":     "Job eliminado",
     "toast.requeued":       "Re-encolado",
+    "toast.retryFailed":    "Re-encoladas pistas fallidas",
     "toast.saveFailed":     "Error al guardar",
     "toast.resetFailed":    "Error al restablecer",
+
+    // Notificaciones (Escritorio)
+    "notification.doneTitle":  "Descarga completada",
+    "notification.doneBody":   "Finalizada {title} ({count} canciones)",
+    "notification.errorTitle": "Error en descarga",
+    "notification.errorBody":  "Error en {title}: {error}",
 
     "auth.status.notLogged":"Sin sesión",
     "auth.status.logged":  "Sesión iniciada",
 
+    "job.retryFailed":          "Reintentar solo pistas fallidas",
     "job.error.removeJob":      "¿Eliminar este job de la cola?",
     "job.run":                  "{done}/{total}",
     "job.failedSuffix":         "· {n} fallidas",

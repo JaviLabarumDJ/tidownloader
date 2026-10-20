@@ -467,3 +467,45 @@ def test_delete_path_escape_blocked(client, app, tmp_path):
 
     res = client.delete("/api/files/file/..%2Fescape")
     assert res.status_code == 400
+
+
+def test_batch_downloads(client):
+    urls = (
+        "https://tidal.com/track/123456\n"
+        "https://tidal.com/track/654321\n"
+        "https://tidal.com/playlist/abcdef12-3456-7890-abcd-ef1234567890"
+    )
+    res = client.post("/api/downloads", json={"url": urls, "quality": "mp3_320"})
+    assert res.status_code == 201
+    data = res.get_json()
+    assert data["count"] == 3
+    assert len(data["jobs"]) == 3
+
+
+def test_retry_failed_download(client):
+    res = client.post(
+        "/api/downloads",
+        json={"url": "https://tidal.com/track/123456", "quality": "mp3_320"},
+    )
+    job_id = res.get_json()["id"]
+
+    # Mark track as failed in the queue
+    from tidownloader.web.queue import JobQueue
+    # Call retry-failed
+    res_retry = client.post(f"/api/downloads/{job_id}/retry-failed")
+    assert res_retry.status_code == 200
+    assert res_retry.get_json()["status"] == "pending"
+
+
+def test_webhook_test_endpoint(client):
+    # Without webhook configured
+    res = client.post("/api/webhook/test")
+    assert res.status_code == 400
+
+    # Configure webhook
+    client.put("/api/settings", json={"webhook_url": "https://example.com/webhook"})
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        res = client.post("/api/webhook/test")
+        assert res.status_code == 200
+        assert res.get_json()["ok"] is True

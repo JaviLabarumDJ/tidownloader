@@ -17,10 +17,20 @@ const STATE = {
   // Job DOM cache — patched in place rather than rebuilt.
   jobNodes: new Map(),
   currentJobsById: new Map(),
+  prevJobStatuses: new Map(),
   // Per-track sync tracking for the local folder.
   syncedFiles: new Set(JSON.parse(localStorage.getItem("td-synced") || "[]")),
   pollTimer: null,
 };
+
+function sendBrowserNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    try {
+      new Notification(title, { body, icon: "/static/favicon.ico" });
+    } catch {}
+  }
+}
 
 const COVER_SIZES = [320, 640, 1280, 1920, 3000];
 
@@ -284,12 +294,20 @@ async function queueUrl(url, quality, downloadPath) {
     toast(err.error || t("toast.queueFailed"), "error");
     return false;
   }
-  toast(t("toast.addedQueue"));
+  const data = await res.json().catch(() => ({}));
+  if (data.jobs && data.jobs.length > 1) {
+    toast(t("toast.batchAdded", { count: data.jobs.length }));
+  } else {
+    toast(t("toast.addedQueue"));
+  }
   return true;
 }
 
 $("#add-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if ("Notification" in window && Notification.permission === "default") {
+    try { Notification.requestPermission(); } catch {}
+  }
   const url = $("#url").value.trim();
   const quality = $("#quality").value;
   const downloadPath = $("#download_path").value.trim();
@@ -576,6 +594,9 @@ function buildJobCard(j) {
   const actions = document.createElement("div");
   actions.className = "job-actions";
   actions.innerHTML = `
+    <button class="btn btn-ghost" data-action="retry-failed" title="${escapeHtml(t("job.retryFailed"))}" style="display:none;color:var(--warning)" aria-label="${escapeHtml(t("job.retryFailed"))}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/><circle cx="12" cy="12" r="1"/></svg>
+    </button>
     <button class="btn btn-ghost" data-action="retry" title="Retry">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
     </button>
@@ -631,6 +652,7 @@ function buildJobCard(j) {
     card,
     h3, urlEl,
     qualityPill, statusChip,
+    retryFailedBtn: actions.querySelector('[data-action="retry-failed"]'),
     fillEl, stats,
     toggle, toggleLabel, chevron, list,
     errorEl,
@@ -648,8 +670,20 @@ function handleJobClick(e, jobId) {
   if (!btn) return;
   const action = btn.dataset.action;
   if (action === "retry") retryJob(jobId);
+  else if (action === "retry-failed") retryFailedJob(jobId);
   else if (action === "delete") removeJob(jobId);
   else if (action === "toggle-tracks") toggleTracks(jobId);
+}
+
+async function retryFailedJob(jobId) {
+  const res = await fetch(`/api/downloads/${jobId}/retry-failed`, { method: "POST" });
+  if (res.ok) {
+    toast(t("toast.retryFailed"));
+    refreshJobs();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    toast(err.error || "Retry failed", "error");
+  }
 }
 
 async function retryJob(jobId) {
@@ -768,6 +802,13 @@ function patchJob(j, refs) {
   const chipHtml = `<span class="dot"></span>${escapeHtml(j.status)}`;
   if (refs.statusChip.innerHTML !== chipHtml) refs.statusChip.innerHTML = chipHtml;
 
+  // Retry-failed button visibility
+  if (refs.retryFailedBtn) {
+    const showRetryFailed = (j.failed > 0 && j.status !== "running" && j.status !== "pending");
+    refs.retryFailedBtn.style.display = showRetryFailed ? "inline-flex" : "none";
+    refs.retryFailedBtn.title = t("job.retryFailed");
+  }
+
   // Card running border
   const cardCls = "job-card" + (j.status === "running" ? " running" : "");
   if (refs.card.className !== cardCls) refs.card.className = cardCls;
@@ -860,6 +901,23 @@ function patchJobs(jobs) {
   }
 
   jobs.forEach((j) => {
+    // Notify on completion or error
+    const prevStatus = STATE.prevJobStatuses.get(j.id);
+    if (prevStatus && prevStatus !== j.status) {
+      if (j.status === "done") {
+        sendBrowserNotification(
+          t("notification.doneTitle"),
+          t("notification.doneBody", { title: j.name || j.url, count: (j.downloaded || 0) + (j.skipped || 0) })
+        );
+      } else if (j.status === "error") {
+        sendBrowserNotification(
+          t("notification.errorTitle"),
+          t("notification.errorBody", { title: j.name || j.url, error: j.error || "Error" })
+        );
+      }
+    }
+    STATE.prevJobStatuses.set(j.id, j.status);
+
     seenIds.add(j.id);
     STATE.currentJobsById.set(j.id, j);
     let refs = STATE.jobNodes.get(j.id);
@@ -1093,19 +1151,22 @@ $("#refresh-files").addEventListener("click", () => {
 // ---------- Settings ----------
 
 const ESSENTIAL = new Set([
-  "download_path", "quality", "embed_lyrics", "save_cover_in_folder",
-  "create_m3u8", "concurrent_downloads", "skip_existing",
+  "download_path", "quality", "embed_lyrics", "save_lrc_file", "save_cover_in_folder",
+  "create_m3u8", "concurrent_downloads", "skip_existing", "fallback_search_missing",
+  "webhook_enabled", "webhook_url",
 ]);
 
 const SECTIONS = [
   { titleKey: "settings.audio",     hintKey: "settings.audioHint",
     keys: ["download_path", "quality"] },
   { titleKey: "settings.metadata",  hintKey: "settings.metadataHint",
-    keys: ["embed_lyrics", "save_cover_in_folder", "create_m3u8"] },
+    keys: ["embed_lyrics", "save_lrc_file", "save_cover_in_folder", "create_m3u8"] },
   { titleKey: "settings.speed",     hintKey: "settings.speedHint",
     keys: ["concurrent_downloads"] },
   { titleKey: "settings.behaviour", hintKey: "settings.behaviourHint",
-    keys: ["skip_existing"] },
+    keys: ["skip_existing", "fallback_search_missing"] },
+  { titleKey: "settings.notifications", hintKey: "settings.notificationsHint",
+    keys: ["webhook_enabled", "webhook_url"] },
 ];
 
 let SETTINGS_STATE = {};
@@ -1116,7 +1177,15 @@ function settingRow(field, value) {
   wrap.className = `setting ${field.type === "text" || field.type === "select" || field.type === "path" ? "full" : ""}`;
 
   let input = "";
-  if (field.type === "select") {
+  if (field.key === "webhook_url") {
+    input = `
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" id="${id}" value="${escapeHtml(value ?? "")}" style="flex:1;" placeholder="https://discord.com/api/webhooks/..." />
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-test-webhook" style="white-space:nowrap;border:1px solid var(--border);padding:6px 12px;">
+          ${escapeHtml(t("settings.testWebhook"))}
+        </button>
+      </div>`;
+  } else if (field.type === "select") {
     const opts = (field.options || []).map((o) => {
       const v = Array.isArray(o) ? o[0] : o;
       const label = Array.isArray(o) ? o[1] : o;
@@ -1181,6 +1250,39 @@ async function refreshSettings() {
     });
     adv.appendChild(advGrid);
     form.appendChild(adv);
+  }
+
+  // Bind Webhook test button
+  const testBtn = $("#btn-test-webhook");
+  if (testBtn) {
+    testBtn.addEventListener("click", async () => {
+      const urlInput = $("#s-webhook_url");
+      const url = urlInput ? urlInput.value.trim() : "";
+      if (!url) {
+        toast(t("settings.webhookUrlRequired"), "error");
+        return;
+      }
+      testBtn.disabled = true;
+      testBtn.textContent = t("settings.testingWebhook");
+      try {
+        const testRes = await fetch("/api/webhook/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhook_url: url }),
+        });
+        const testData = await testRes.json().catch(() => ({}));
+        if (testRes.ok) {
+          toast(t("settings.webhookSuccess"));
+        } else {
+          toast(testData.error || t("settings.webhookFailed"), "error");
+        }
+      } catch (e) {
+        toast(String(e), "error");
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = t("settings.testWebhook");
+      }
+    });
   }
 }
 

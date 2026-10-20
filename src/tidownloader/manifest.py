@@ -6,6 +6,7 @@ import base64
 import logging
 import re
 import threading
+import time
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
@@ -111,6 +112,7 @@ def fetch_decryption_key(
     session: tidalapi.Session,
     kid: str,
     endpoint: str = DEFAULT_KEY_ENDPOINT,
+    max_retries: int = 4,
 ) -> bytes:
     """Fetch the AES-128 decryption key for a given KID from Tidal.
 
@@ -121,24 +123,36 @@ def fetch_decryption_key(
 
     params = {"keyId": kid}
     LOG.debug("Fetching decryption key for KID %s", kid)
-    response = session.request.basic_request(
-        "GET", endpoint, params=params, base_url="https://api.tidal.com"
-    )
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Failed to fetch decryption key (status {response.status_code}): "
-            f"{response.text[:200]}"
+    for attempt in range(max_retries):
+        response = session.request.basic_request(
+            "GET", endpoint, params=params, base_url="https://api.tidal.com"
         )
-    payload = response.json()
-    key_b64 = payload.get("key")
-    if not key_b64:
-        raise RuntimeError(f"Decryption key response missing 'key' field: {payload}")
-    key = base64.b64decode(key_b64)
-    if len(key) != 16:
-        raise RuntimeError(
-            f"Unexpected decryption key length {len(key)} bytes (expected 16)"
-        )
-    return key
+        if response.status_code == 429 and attempt < max_retries - 1:
+            wait_sec = 2 ** (attempt + 1)
+            LOG.warning(
+                "Rate limit (429) fetching decryption key for %s; waiting %ds (attempt %d/%d)...",
+                kid, wait_sec, attempt + 1, max_retries,
+            )
+            time.sleep(wait_sec)
+            continue
+        if response.status_code >= 500 and attempt < max_retries - 1:
+            time.sleep(2 ** (attempt + 1))
+            continue
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to fetch decryption key (status {response.status_code}): "
+                f"{response.text[:200]}"
+            )
+        payload = response.json()
+        key_b64 = payload.get("key")
+        if not key_b64:
+            raise RuntimeError(f"Decryption key response missing 'key' field: {payload}")
+        key = base64.b64decode(key_b64)
+        if len(key) != 16:
+            raise RuntimeError(
+                f"Unexpected decryption key length {len(key)} bytes (expected 16)"
+            )
+        return key
 
 
 def _build_cipher_ctr(key: bytes, segment_index: int) -> AES.AESModeOfOperationCTR:

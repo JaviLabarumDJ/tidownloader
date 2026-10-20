@@ -58,6 +58,39 @@ class RenderContext:
     playlistowner: str = ""
 
 
+_SAFE_CHARS = re.compile(r"[^A-Za-z0-9 _\-\.\(\)\[\]\u00C0-\uFFFF]")
+# Characters that are unsafe inside a *single* path segment. Slashes are
+# unsafe at the segment level (they split segments) but legitimate as
+# path separators inside a folder template — those are handled separately.
+_SEGMENT_UNSAFE_CHARS = re.compile(r"[/\\<>:\"|?*\x00-\x1F]")
+
+
+def sanitize(name: str, cfg: Config, *, allow_slashes: bool = False) -> str:
+    if not cfg.sanitize_filenames:
+        return name
+    if allow_slashes:
+        # Sanitize each path segment independently so folder templates
+        # like "Playlists/{playlist}" keep their structure.
+        segments = name.split("/") if "/" in name else [name]
+        segments = [sanitize(s, cfg, allow_slashes=False) for s in segments]
+        out = "/".join(s for s in segments if s)
+    else:
+        out = _SEGMENT_UNSAFE_CHARS.sub(cfg.replacement_char, name)
+        out = _SAFE_CHARS.sub(cfg.replacement_char, out)
+        if cfg.replace_spaces:
+            out = out.replace(" ", cfg.replacement_char)
+        out = out.strip(" ._")
+        if len(out) > cfg.max_filename_length:
+            head, _, tail = out.rpartition(cfg.replacement_char)
+            keep_tail = cfg.max_filename_length - len(head) - 1
+            if keep_tail > 20 and tail:
+                out = head + cfg.replacement_char + tail[-keep_tail:]
+            else:
+                out = out[: cfg.max_filename_length]
+        out = out or "_"
+    return out
+
+
 def _track_to_context(
     track: TrackInfo,
     cfg: Config,
@@ -95,6 +128,8 @@ def _track_to_context(
 
     explicit_tag = " (Explicit)" if track.explicit else ""
 
+    playlist_clean = sanitize(playlist_name, cfg, allow_slashes=False) if playlist_name else ""
+
     return RenderContext(
         title=track.title,
         tracknum=tracknum,
@@ -115,7 +150,7 @@ def _track_to_context(
         bitrate="",
         quality=quality_label,
         ext=extension,
-        playlist=playlist_name,
+        playlist=playlist_clean,
         playlistnum=(
             str(playlist_index).zfill(cfg.tracknum_padding)
             if playlist_index
@@ -165,39 +200,6 @@ def render(template: str, ctx: RenderContext) -> str:
         return str(value)
 
     return _PLACEHOLDER_RE.sub(repl, template)
-
-
-_SAFE_CHARS = re.compile(r"[^A-Za-z0-9 _\-\.\(\)\[\]\u00C0-\uFFFF]")
-# Characters that are unsafe inside a *single* path segment. Slashes are
-# unsafe at the segment level (they split segments) but legitimate as
-# path separators inside a folder template — those are handled separately.
-_SEGMENT_UNSAFE_CHARS = re.compile(r"[/\\<>:\"|?*\x00-\x1F]")
-
-
-def sanitize(name: str, cfg: Config, *, allow_slashes: bool = False) -> str:
-    if not cfg.sanitize_filenames:
-        return name
-    if allow_slashes:
-        # Sanitize each path segment independently so folder templates
-        # like "Playlists/{playlist}" keep their structure.
-        segments = name.split("/") if "/" in name else [name]
-        segments = [sanitize(s, cfg, allow_slashes=False) for s in segments]
-        out = "/".join(s for s in segments if s)
-    else:
-        out = _SEGMENT_UNSAFE_CHARS.sub(cfg.replacement_char, name)
-        out = _SAFE_CHARS.sub(cfg.replacement_char, out)
-        if cfg.replace_spaces:
-            out = out.replace(" ", cfg.replacement_char)
-        out = out.strip(" ._")
-        if len(out) > cfg.max_filename_length:
-            head, _, tail = out.rpartition(cfg.replacement_char)
-            keep_tail = cfg.max_filename_length - len(head) - 1
-            if keep_tail > 20 and tail:
-                out = head + cfg.replacement_char + tail[-keep_tail:]
-            else:
-                out = out[: cfg.max_filename_length]
-        out = out or "_"
-    return out
 
 
 # --------------------------------------------------------------------------- #

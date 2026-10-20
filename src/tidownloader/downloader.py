@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterable, Optional
@@ -140,17 +142,136 @@ def _get_http_session(tidal_session: tidalapi.Session) -> requests.Session:
     return tidal_session.request_session
 
 
+_STREAM_LOCK = threading.Lock()
+_LAST_STREAM_TIME = 0.0
+_ACCOUNT_RATE_LIMITED_UNTIL = 0.0
+
+
+def _fetch_stream_unauth(
+    session: tidalapi.Session,
+    track_id: int,
+    preferred_quality: str,
+) -> Optional[tuple[tidalapi.media.Stream, tidalapi.media.StreamManifest]]:
+    """Fallback: fetch playback stream info without Authorization header.
+
+    When an account triggers Tidal's OAuth endpoint rate limit (429),
+    Tidal continues to serve valid unencrypted AAC/MP4 streams (HIGH/LOW)
+    for playback using just the public session ID.
+    """
+    qualities_to_try = [preferred_quality]
+    if preferred_quality not in ("HIGH", "LOW"):
+        qualities_to_try.extend(["HIGH", "LOW"])
+    elif preferred_quality == "HIGH":
+        qualities_to_try.append("LOW")
+    elif preferred_quality == "LOW":
+        qualities_to_try.append("HIGH")
+
+    url = f"https://api.tidal.com/v1/tracks/{track_id}/playbackinfopostpaywall"
+    session_id = getattr(session, "session_id", None)
+    country_code = getattr(session, "country_code", None) or "ES"
+
+    for q in qualities_to_try:
+        params = {
+            "sessionId": session_id,
+            "countryCode": country_code,
+            "playbackmode": "STREAM",
+            "audioquality": q,
+            "assetpresentation": "FULL",
+        }
+        try:
+            resp = session.request_session.get(url, params=params, timeout=15)
+            if resp.status_code == 200:
+                stream = session.request.map_json(resp.json(), parse=tidalapi.media.Stream().parse)
+                manifest = stream.get_stream_manifest()
+                return stream, manifest
+        except Exception as exc:
+            LOG.debug("Unauth stream fetch error for track %s (%s): %s", track_id, q, exc)
+
+    return None
+
+
 def _fetch_stream_and_manifest(
     session: tidalapi.Session,
     track_id: int,
     preferred_quality: str,
+    max_retries: int = 4,
 ) -> tuple[tidalapi.media.Stream, tidalapi.media.StreamManifest]:
-    track_obj = session.track(track_id)
-    if session.config.quality != preferred_quality:
-        session.config.quality = preferred_quality
-    stream = track_obj.get_stream()
-    manifest = stream.get_stream_manifest()
-    return stream, manifest
+    global _LAST_STREAM_TIME, _ACCOUNT_RATE_LIMITED_UNTIL
+
+    # If the user account is in cooldown from a 429, bypass the failing
+    # authenticated call and fetch unauthenticated stream directly.
+    if time.time() < _ACCOUNT_RATE_LIMITED_UNTIL:
+        with _STREAM_LOCK:
+            elapsed = time.time() - _LAST_STREAM_TIME
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            _LAST_STREAM_TIME = time.time()
+
+        unauth_res = _fetch_stream_unauth(session, track_id, preferred_quality)
+        if unauth_res is not None:
+            return unauth_res
+
+    for attempt in range(max_retries):
+        try:
+            with _STREAM_LOCK:
+                elapsed = time.time() - _LAST_STREAM_TIME
+                if elapsed < 1.0:
+                    time.sleep(1.0 - elapsed)
+                _LAST_STREAM_TIME = time.time()
+
+                track_obj = session.track(track_id)
+                if session.config.quality != preferred_quality:
+                    session.config.quality = preferred_quality
+                stream = track_obj.get_stream()
+                manifest = stream.get_stream_manifest()
+                return stream, manifest
+        except Exception as exc:
+            msg = str(exc)
+            try:
+                from tidalapi.exceptions import TooManyRequests, StreamNotAvailable
+            except ImportError:
+                TooManyRequests = tuple()
+                StreamNotAvailable = tuple()
+
+            is_429 = (
+                (TooManyRequests and isinstance(exc, TooManyRequests))
+                or getattr(getattr(exc, "response", None), "status_code", None) == 429
+                or "429" in msg
+                or "Too Many Requests" in msg
+            )
+            if is_429:
+                _ACCOUNT_RATE_LIMITED_UNTIL = time.time() + 900.0  # 15 minutes cooldown
+                LOG.warning(
+                    "Tidal rate limit (429/TooManyRequests) on track %s; using unauthenticated stream fallback...",
+                    track_id,
+                )
+                unauth_res = _fetch_stream_unauth(session, track_id, preferred_quality)
+                if unauth_res is not None:
+                    LOG.info("Unauthenticated stream fallback succeeded for track %s", track_id)
+                    return unauth_res
+
+                if attempt < max_retries - 1:
+                    wait_sec = 15 * (attempt + 1)
+                    LOG.warning(
+                        "Fallback also rate limited; sleeping %ds (attempt %d/%d)...",
+                        wait_sec, attempt + 1, max_retries,
+                    )
+                    time.sleep(wait_sec)
+                    continue
+
+            if (StreamNotAvailable and isinstance(exc, StreamNotAvailable)) or "404" in msg or "Not Found" in msg:
+                raise
+
+            is_transient = "timeout" in msg.lower() or "connection" in msg.lower()
+            if is_transient and attempt < max_retries - 1:
+                wait_sec = 2 ** (attempt + 1)
+                LOG.warning(
+                    "Track %s stream fetch attempt %d failed (%s); retrying in %ds...",
+                    track_id, attempt + 1, exc, wait_sec,
+                )
+                time.sleep(wait_sec)
+                continue
+            raise
 
 
 def _try_quality(
@@ -166,14 +287,40 @@ def _try_quality(
         raise
 
 
-def _fetch_lyrics(session: tidalapi.Session, track_id: int) -> Optional[str]:
+def _fetch_lyrics(session: tidalapi.Session, track_id: int) -> tuple[Optional[str], Optional[str]]:
+    """Return (plain_text_lyrics, synced_lyrics_subtitles)."""
     try:
         track_obj = session.track(track_id)
         lyrics = track_obj.lyrics()
-        return lyrics.text if lyrics and lyrics.text else None
+        if not lyrics:
+            return None, None
+        plain = lyrics.text if lyrics.text else None
+        synced = getattr(lyrics, "subtitles", None)
+        return plain, synced
     except Exception as exc:
         LOG.debug("Lyrics not available for %s: %s", track_id, exc)
+        return None, None
+
+
+def _search_alternative_track(session: tidalapi.Session, track: TrackInfo) -> Optional[int]:
+    """Search Tidal for an alternative available track when the original is 404 or removed."""
+    artist_name = track.artists[0] if track.artists else ""
+    query = f"{artist_name} {track.title}".strip()
+    if not query:
         return None
+    try:
+        res = session.search(query, models=[tidalapi.media.Track], limit=5)
+        tracks = res.get("tracks", []) if isinstance(res, dict) else getattr(res, "tracks", [])
+        norm_title = re.sub(r"[^a-z0-9]", "", track.title.lower())
+        for cand in tracks:
+            if cand.id == track.track_id or not cand.available:
+                continue
+            cand_title = re.sub(r"[^a-z0-9]", "", cand.title.lower())
+            if cand_title == norm_title or norm_title in cand_title:
+                return cand.id
+    except Exception as exc:
+        LOG.debug("Search for alternative track failed for %s: %s", track.title, exc)
+    return None
 
 
 def _fetch_upc(session: tidalapi.Session, album_id: int) -> str:
@@ -197,13 +344,24 @@ def _download_segments(
 
     def _fetch_one(idx: int, url: str) -> None:
         nonlocal completed
-        response = http.get(url, stream=True, timeout=60)
-        response.raise_for_status()
-        buf = bytearray()
-        for chunk in response.iter_content(chunk_size=64 * 1024):
-            if chunk:
-                buf.extend(chunk)
-        payloads[idx] = bytes(buf)
+        retries = 3
+        for attempt in range(retries):
+            try:
+                response = http.get(url, stream=True, timeout=60)
+                if response.status_code == 429 and attempt < retries - 1:
+                    time.sleep(2 ** (attempt + 1))
+                    continue
+                response.raise_for_status()
+                buf = bytearray()
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        buf.extend(chunk)
+                payloads[idx] = bytes(buf)
+                break
+            except Exception as exc:
+                if attempt == retries - 1:
+                    raise
+                time.sleep(1 + attempt)
         with lock:
             completed += 1
             if on_segment:
@@ -237,28 +395,66 @@ def download_track(
     fallback_quality = FALLBACK_FOR_QUALITY.get(quality_key)
     target_extension = TARGET_EXTENSION_FOR_QUALITY[quality_key]
 
+    # Early check for skip_existing BEFORE making any network call to Tidal
+    target_early, _ = target_path_for_track(
+        track,
+        cfg,
+        extension=target_extension,
+        playlist_name=playlist_name,
+        playlist_index=playlist_index,
+        playlist_owner=playlist_owner,
+    )
+    if cfg.skip_existing and target_early.exists() and not cfg.overwrite_existing:
+        LOG.info("Skipping existing file: %s", target_early)
+        return target_early
+
     session.config.quality = primary_quality
 
     # First attempt at the requested quality.
+    stream_obj = None
+    manifest = None
+
     try:
         stream_obj, manifest = _fetch_stream_and_manifest(
             session, track.track_id, primary_quality
         )
     except Exception as primary_exc:
         LOG.info("%s: %s unavailable (%s)", track.title, primary_quality, primary_exc)
-        if not fallback_quality:
-            return None
-        try:
-            stream_obj, manifest = _fetch_stream_and_manifest(
-                session, track.track_id, fallback_quality
-            )
-        except Exception as fallback_exc:
-            LOG.warning(
-                "%s: no stream available at %s or %s (%s / %s)",
-                track.title, primary_quality, fallback_quality,
-                primary_exc, fallback_exc,
-            )
-            return None
+        if fallback_quality:
+            try:
+                stream_obj, manifest = _fetch_stream_and_manifest(
+                    session, track.track_id, fallback_quality
+                )
+            except Exception as fallback_exc:
+                LOG.warning(
+                    "%s: no stream available at %s or %s (%s / %s)",
+                    track.title, primary_quality, fallback_quality,
+                    primary_exc, fallback_exc,
+                )
+
+    used_track_id: Optional[int] = None
+    if (stream_obj is None or manifest is None) and cfg.fallback_search_missing:
+        alt_track_id = _search_alternative_track(session, track)
+        if alt_track_id:
+            LOG.info("Searching fallback stream for %s using alternative track ID %s...", track.title, alt_track_id)
+            try:
+                stream_obj, manifest = _fetch_stream_and_manifest(
+                    session, alt_track_id, primary_quality
+                )
+                used_track_id = alt_track_id
+            except Exception:
+                if fallback_quality:
+                    try:
+                        stream_obj, manifest = _fetch_stream_and_manifest(
+                            session, alt_track_id, fallback_quality
+                        )
+                        used_track_id = alt_track_id
+                    except Exception:
+                        pass
+
+    if stream_obj is None or manifest is None:
+        LOG.warning("%s: no stream available", track.title)
+        return None
 
     try:
         info = parse_manifest(stream_obj, manifest)
@@ -280,8 +476,7 @@ def download_track(
             LOG.warning("Could not fetch decryption key for %s: %s", track.title, exc)
             return None
 
-    # Resolve the target path *before* downloading so we can honour
-    # skip_existing.
+    # Resolve final target path (with bit depth / quality label if configured)
     target, folder_rel = target_path_for_track(
         track,
         cfg,
@@ -344,7 +539,10 @@ def download_track(
         if (cfg.embed_cover or cfg.save_cover_in_folder)
         else None
     )
-    lyrics = _fetch_lyrics(session, track.track_id) if cfg.embed_lyrics else None
+    lyrics_plain, lyrics_synced = (None, None)
+    if cfg.embed_lyrics or cfg.save_lrc_file:
+        lyrics_plain, lyrics_synced = _fetch_lyrics(session, used_track_id or track.track_id)
+
     upc = _fetch_upc(session, track.album_id) if cfg.embed_upc else ""
 
     # Tag the *final* path (post-conversion), so the tags match the
@@ -354,9 +552,17 @@ def download_track(
     final = _maybe_postprocess(delivered_path, target, delivered_extension, quality_key)
 
     try:
-        tag_file(final, track, cover, target_extension, lyrics=lyrics, upc=upc)
+        tag_file(final, track, cover, target_extension, lyrics=lyrics_plain if cfg.embed_lyrics else None, upc=upc)
     except Exception as exc:
         LOG.warning("Failed to tag %s: %s", final, exc)
+
+    if cfg.save_lrc_file and (lyrics_synced or lyrics_plain):
+        try:
+            lrc_path = final.with_suffix(".lrc")
+            lrc_path.write_text(lyrics_synced or lyrics_plain, encoding="utf-8")
+            LOG.debug("Saved .lrc lyrics: %s", lrc_path)
+        except Exception as exc:
+            LOG.warning("Could not save .lrc lyrics file: %s", exc)
 
     if cover and cfg.save_cover_in_folder and folder_rel:
         try:

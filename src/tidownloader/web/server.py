@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-import threading
+import re
 from pathlib import Path
 from typing import Any
 
+import requests
 import tidalapi
 from flask import (
     Flask,
@@ -220,17 +221,34 @@ def create_app(
     @app.post("/api/downloads")
     def create_download() -> Response:
         payload = request.get_json(force=True, silent=True) or {}
-        url = (payload.get("url") or "").strip()
+        raw_url = (payload.get("url") or "").strip()
         raw_quality = (payload.get("quality") or "").lower()
         custom_dir = (payload.get("download_path") or "").strip()
 
-        if not url:
+        if not raw_url:
             return jsonify({"error": "url is required"}), 400
 
-        try:
-            api.parse_url(url)
-        except Exception as exc:
-            return jsonify({"error": f"invalid URL: {exc}"}), 400
+        # Split multiple lines / URLs if batch pasted
+        candidates = [u.strip() for u in re.split(r"[\r\n]+", raw_url) if u.strip()]
+        if len(candidates) == 1 and (" " in candidates[0] or "\t" in candidates[0]):
+            candidates = [u.strip() for u in candidates[0].split() if u.strip()]
+
+        if len(candidates) > 1:
+            urls = []
+            for u in candidates:
+                try:
+                    api.parse_url(u)
+                    urls.append(u)
+                except Exception:
+                    pass
+            if not urls:
+                return jsonify({"error": "No valid Tidal URLs found"}), 400
+        else:
+            try:
+                api.parse_url(raw_url)
+            except Exception as exc:
+                return jsonify({"error": f"invalid URL: {exc}"}), 400
+            urls = [raw_url]
 
         # Resolve legacy / unknown quality strings transparently.
         if raw_quality:
@@ -245,9 +263,16 @@ def create_app(
         else:
             output_dir = config_store.get().download_path
 
-        job = queue.add(url, quality, output_dir)
+        created_jobs = []
+        for u in urls:
+            job = queue.add(u, quality, output_dir)
+            created_jobs.append(job)
+
         worker.nudge()
-        return jsonify(_job_to_dict(job)), 201
+
+        if len(created_jobs) == 1:
+            return jsonify(_job_to_dict(created_jobs[0])), 201
+        return jsonify({"jobs": [_job_to_dict(j) for j in created_jobs], "count": len(created_jobs)}), 201
 
     @app.get("/api/downloads/<int:job_id>")
     def get_download(job_id: int) -> Response:
@@ -261,6 +286,7 @@ def create_app(
         job = queue.get(job_id)
         if job is None:
             abort(404)
+        worker.cancel(job_id)
         queue.delete(job_id)
         return jsonify({"ok": True})
 
@@ -272,6 +298,36 @@ def create_app(
         queue.update(job_id, status="pending", error="")
         worker.nudge()
         return jsonify(_job_to_dict(job))
+
+    @app.post("/api/downloads/<int:job_id>/retry-failed")
+    def retry_failed_download(job_id: int) -> Response:
+        job = queue.retry_failed(job_id)
+        if job is None:
+            abort(404)
+        worker.nudge()
+        return jsonify(_job_to_dict(job))
+
+    @app.post("/api/webhook/test")
+    def test_webhook() -> Response:
+        cfg = config_store.get()
+        if not cfg.webhook_url:
+            return jsonify({"error": "No webhook URL configured"}), 400
+        try:
+            payload = {
+                "content": "TiDownloader: Webhook test successful!",
+                "username": "TiDownloader",
+                "title": "TiDownloader Test",
+                "message": "Your webhook configuration is working.",
+                "embeds": [{
+                    "title": "TiDownloader Test",
+                    "description": "Webhook configuration is working correctly.",
+                    "color": 0x00D4C5,
+                }]
+            }
+            resp = requests.post(cfg.webhook_url, json=payload, timeout=5)
+            return jsonify({"ok": True, "status_code": resp.status_code})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     # ---------- Files ----------
 

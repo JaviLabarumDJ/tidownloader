@@ -152,6 +152,7 @@ class Config:
 
     # ---------- Tags ----------
     embed_lyrics: bool = True
+    save_lrc_file: bool = True
     embed_isrc: bool = True
     embed_upc: bool = True
 
@@ -176,8 +177,13 @@ class Config:
     retry_on_error: int = 2
 
     # ---------- Search / fallback ----------
+    fallback_search_missing: bool = True
     fallback_language: str = "en"
     log_searched: bool = False
+
+    # ---------- Notifications / Webhooks ----------
+    webhook_enabled: bool = False
+    webhook_url: str = ""
 
     # ---------- Metadata fields ----------
     artist_separator: str = ", "
@@ -278,8 +284,10 @@ OPTION_SCHEMA = [
     {"key": "cover_size", "label": "Cover size (pixels)", "type": "select",
      "options": COVER_SIZES},
 
-    {"key": "embed_lyrics", "label": "Embed lyrics", "type": "bool",
+    {"key": "embed_lyrics", "label": "Embed lyrics in audio tags", "type": "bool",
      "section": "Tags"},
+    {"key": "save_lrc_file", "label": "Save synchronized .lrc lyrics file", "type": "bool",
+     "help": "Creates a .lrc file alongside the track for Plex, Navidrome, Jellyfin, etc."},
     {"key": "embed_isrc", "label": "Embed ISRC", "type": "bool"},
     {"key": "embed_upc", "label": "Embed UPC", "type": "bool"},
 
@@ -319,7 +327,14 @@ OPTION_SCHEMA = [
     {"key": "remove_finished", "label": "Remove finished jobs from the queue", "type": "bool"},
     {"key": "retry_on_error", "label": "Retries on transient errors", "type": "int"},
 
-    {"key": "fallback_language", "label": "Fallback metadata language", "type": "text",
-     "section": "Search"},
+    {"key": "fallback_search_missing", "label": "Auto-search alternative for unavailable tracks", "type": "bool",
+     "section": "Search",
+     "help": "If a track was removed or returns 404, search Tidal for the same song on other albums."},
+    {"key": "fallback_language", "label": "Fallback metadata language", "type": "text"},
     {"key": "log_searched", "label": "Verbose search logging", "type": "bool"},
+
+    {"key": "webhook_enabled", "label": "Enable webhook notifications", "type": "bool",
+     "section": "Notifications"},
+    {"key": "webhook_url", "label": "Webhook URL (Discord, Slack, Gotify, etc.)", "type": "text",
+     "help": "POST JSON payload sent on download completion or failure."},
 ]
