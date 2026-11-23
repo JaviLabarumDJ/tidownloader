@@ -38,10 +38,6 @@ jobs:
             arch: arm64
             artifact_name: tidownloader-macos-arm64
             archive_ext: zip
-          - os: macos-13
-            arch: x86_64
-            artifact_name: tidownloader-macos-x86_64
-            archive_ext: zip
 
     steps:
       - name: Check out repository
