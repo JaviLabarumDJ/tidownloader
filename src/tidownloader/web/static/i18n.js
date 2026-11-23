@@ -169,6 +169,12 @@ const I18N = {
     "localFolder.syncFailed":  "Could not sync — permission may have been revoked.",
     "localFolder.syncing":     "Syncing…",
     "localFolder.pickFailed":  "Could not open folder picker.",
+    "nav.github":              "GitHub Repository",
+    "about.title":             "About & Releases",
+    "about.releases":          "Releases",
+    "about.desc":              "Standalone desktop executables available for Windows, macOS and Linux.",
+    "about.downloadApps":      "Download Desktop Apps",
+    "about.docs":              "Documentation",
   },
 
   es: {
@@ -326,6 +332,12 @@ const I18N = {
     "localFolder.syncFailed":  "No se pudo sincronizar — puede que se haya revocado el permiso.",
     "localFolder.syncing":     "Sincronizando…",
     "localFolder.pickFailed":  "No se pudo abrir el selector de carpetas.",
+    "nav.github":              "Repositorio en GitHub",
+    "about.title":             "Acerca de y Descargas",
+    "about.releases":          "Versiones",
+    "about.desc":              "Ejecutables de escritorio listos para Windows, macOS y Linux.",
+    "about.downloadApps":      "Descargar Apps de Escritorio",
+    "about.docs":              "Documentación",
   },
 };
 

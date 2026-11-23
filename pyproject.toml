@@ -20,6 +20,12 @@ dependencies = [
     "flask>=3.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/JaviLabarumDJ/tidownloader"
+Repository = "https://github.com/JaviLabarumDJ/tidownloader.git"
+Issues = "https://github.com/JaviLabarumDJ/tidownloader/issues"
+Releases = "https://github.com/JaviLabarumDJ/tidownloader/releases"
+
 [project.scripts]
 tidownloader = "tidownloader.cli:main"
 tidownloader-web = "tidownloader.web.server:main"

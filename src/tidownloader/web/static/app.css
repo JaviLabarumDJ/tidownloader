@@ -522,6 +522,66 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   animation: pulse 1.5s infinite;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: all var(--trans);
+  text-decoration: none;
+}
+
+.topbar-link:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.about-card {
+  margin-top: 10px;
+}
+
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.about-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all var(--trans);
+}
+
+.about-pill:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
 /* =================================================================
    Panels & cards
    ================================================================= */

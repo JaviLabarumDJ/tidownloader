@@ -9,11 +9,11 @@
   <br>
   Lossless FLAC, MP3 320, M4A, search, themes, multi-language, file manager.
   <br><br>
-  <a href="https://github.com/javiservices/tidownloader"><img src="https://img.shields.io/badge/version-0.1.0-00d4c5?style=flat-square" alt="version"></a>
-  <a href="https://github.com/javiservices/tidownloader/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square" alt="license"></a>
-  <a href="https://github.com/javiservices/tidownloader/pkgs/container/tidownloader"><img src="https://img.shields.io/badge/docker-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white" alt="docker"></a>
-  <a href="https://github.com/javiservices/tidownloader/actions"><img src="https://img.shields.io/badge/tests-79%20passing-10b981?style=flat-square" alt="tests"></a>
-  <a href="https://github.com/javiservices/tidownloader"><img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="python"></a>
+  <a href="https://github.com/JaviLabarumDJ/tidownloader"><img src="https://img.shields.io/badge/version-0.1.0-00d4c5?style=flat-square" alt="version"></a>
+  <a href="https://github.com/JaviLabarumDJ/tidownloader/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square" alt="license"></a>
+  <a href="https://github.com/JaviLabarumDJ/tidownloader/releases/latest"><img src="https://img.shields.io/badge/release-v0.1.0-10b981?style=flat-square&logo=github&logoColor=white" alt="releases"></a>
+  <a href="https://github.com/JaviLabarumDJ/tidownloader/actions"><img src="https://img.shields.io/badge/tests-91%20passing-10b981?style=flat-square" alt="tests"></a>
+  <a href="https://github.com/JaviLabarumDJ/tidownloader"><img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="python"></a>
 </p>
 
 <p align="center">
@@ -88,19 +88,18 @@ The web UI lets you **pick a folder on your computer** using the browser's nativ
 
 No Python or Docker installation required:
 
-1. Download the executable for your OS from **[Releases](https://github.com/JaviLabarumDJ/tidownloader/releases)**:
-   - **Windows**: `tidownloader-windows-x86_64.zip`
-   - **Linux**: `tidownloader-linux-x86_64.tar.gz`
-   - **macOS (Apple Silicon M1/M2/M3/M4)**: `tidownloader-macos-arm64.zip`
-   - **macOS (Intel)**: `tidownloader-macos-x86_64.zip`
+1. Download the executable for your OS from **[Releases](https://github.com/JaviLabarumDJ/tidownloader/releases/latest)**:
+   - 🪟 **Windows (x64)**: [`tidownloader-windows-x86_64.zip`](https://github.com/JaviLabarumDJ/tidownloader/releases/download/v0.1.0/tidownloader-windows-x86_64.zip)
+   - 🍏 **macOS (Apple Silicon M1/M2/M3/M4)**: [`tidownloader-macos-arm64.zip`](https://github.com/JaviLabarumDJ/tidownloader/releases/download/v0.1.0/tidownloader-macos-arm64.zip)
+   - 🐧 **Linux (x64)**: [`tidownloader-linux-x86_64.tar.gz`](https://github.com/JaviLabarumDJ/tidownloader/releases/download/v0.1.0/tidownloader-linux-x86_64.tar.gz)
 2. Extract the archive.
-3. Run `tidownloader-web` (double-click on Windows / run in terminal on Linux & macOS) — it starts the server and opens your browser automatically at `http://localhost:8000`.
+3. Run `tidownloader-web` (double-click on Windows / run `./tidownloader-web` in terminal on Linux & macOS) — it starts the server and opens your browser automatically at `http://localhost:8000`.
 4. Alternatively, use `tidownloader <urls>` for the direct command-line interface.
 
 ### Docker Compose (recommended)
 
 ```bash
-git clone git@github.com:javiservices/tidownloader.git
+git clone https://github.com/JaviLabarumDJ/tidownloader.git
 cd tidownloader
 docker compose up -d --build
 # Open http://localhost:8000
@@ -113,7 +112,7 @@ Downloads land in `./downloads/` (bind-mounted). The session + queue database pe
 ### Bare metal
 
 ```bash
-git clone git@github.com:javiservices/tidownloader.git
+git clone https://github.com/JaviLabarumDJ/tidownloader.git
 cd tidownloader
 python3 -m venv .venv
 .venv/bin/pip install -e .
@@ -293,10 +292,20 @@ Done. The sidebar language switcher picks it up automatically.
 ### Run from source
 
 ```bash
-git clone git@github.com:javiservices/tidownloader.git
+git clone https://github.com/JaviLabarumDJ/tidownloader.git
 cd tidownloader
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'  # or just pip install pytest flask tidalapi...
+.venv/bin/pip install -e '.[dev]'
+```
+
+### Build Standalone Executables (PyInstaller)
+
+```bash
+# Install PyInstaller
+.venv/bin/pip install pyinstaller
+
+# Build binaries locally (creates dist/tidownloader and dist/tidownloader-web)
+.venv/bin/pyinstaller --noconfirm --clean tidownloader.spec
 ```
 
 ### Test suite
@@ -305,7 +314,7 @@ python3 -m venv .venv
 .venv/bin/pytest tests/ -v
 ```
 
-Tests cover:
+Tests cover (91 passed):
 - URL parsing for all Tidal entity kinds
 - AES-CTR + CBCS decryption round-trips
 - End-to-end download with mocked Tidal API
@@ -317,6 +326,8 @@ Tests cover:
 
 ```
 tidownloader/
+├── .github/workflows/
+│   └── build-executables.yml Multiplatform CI/CD (Windows, macOS, Linux)
 ├── src/tidownloader/
 │   ├── auth.py         OAuth device-link + session persistence
 │   ├── api.py          URL parsing, fetching, search
@@ -327,18 +338,16 @@ tidownloader/
 │   ├── downloader.py   Per-track download orchestration
 │   ├── web/            Flask app + JSON API + worker thread
 │   │   ├── server.py
-│   │   └── queue.py
+│   │   ├── queue.py
+│   │   ├── templates/  Jinja2 web templates (index.html)
+│   │   └── static/     Static assets (CSS, JS, SVG, i18n)
 │   └── cli.py          argparse CLI
-├── static/
-│   ├── favicon.svg     Tidal-wave favicon
-│   ├── app.css         Theme system + animations
-│   ├── app.js          UI logic + DOM patching
-│   └── i18n.js         Translations (en/es)
+├── tidownloader.spec   PyInstaller build specification
 ├── docs/screenshots/   README images
-├── tests/
-├── Dockerfile
-├── docker-compose.yml
-└── pyproject.toml
+├── tests/              pytest test suite (91 tests)
+├── Dockerfile          Container build image
+├── docker-compose.yml  Docker Compose configuration
+└── pyproject.toml      Python project configuration
 ```
 
 ## ⚠️ Notes
