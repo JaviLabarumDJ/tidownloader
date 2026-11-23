@@ -20,8 +20,9 @@ from rich.progress import (
 from rich.table import Table
 
 from . import __version__
-from .api import QUALITY_PRESETS, resolve_url
+from .api import resolve_url
 from .auth import clear_session, login
+from .config import Config, QUALITY_OPTIONS, resolve_quality_key
 from .downloader import download_track
 
 console = Console()
@@ -46,9 +47,14 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "-q",
         "--quality",
-        choices=list(QUALITY_PRESETS.keys()),
-        default="max",
-        help="Audio quality (default: max).",
+        choices=list(QUALITY_OPTIONS.keys()),
+        default="mp3_320",
+        help="Audio quality (default: mp3_320).",
+    )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Launch the web dashboard interface.",
     )
     parser.add_argument(
         "--login",
@@ -80,7 +86,7 @@ def _print_track_table(track_count: int, name: str) -> None:
 
 
 def _select_quality(name: str) -> str:
-    return QUALITY_PRESETS[name].value
+    return resolve_quality_key(name)
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -100,8 +106,12 @@ def main(argv: List[str] | None = None) -> int:
         console.print("[green]Session removed.[/green]")
         return 0
 
+    if args.web:
+        from .web.server import main as web_main
+        return web_main()
+
     if not args.urls:
-        console.print("[red]error:[/red] at least one URL is required.")
+        console.print("[red]error:[/red] at least one URL is required. (Use --web to launch the web dashboard)")
         return 2
 
     if args.login:
@@ -115,10 +125,10 @@ def main(argv: List[str] | None = None) -> int:
 
     # Merge session quality
     quality = _select_quality(args.quality)
-    session.config.quality = quality
 
     output_dir = Path(args.output).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    cfg = Config(download_path=str(output_dir), quality=quality)
 
     progress = Progress(
         SpinnerColumn(),
@@ -157,7 +167,7 @@ def main(argv: List[str] | None = None) -> int:
                     )
 
                 path = download_track(
-                    session, track, output_dir, quality, on_progress=_on_progress
+                    session, track, cfg, on_progress=_on_progress
                 )
                 progress.update(task, completed=1, total=1)
                 if path:

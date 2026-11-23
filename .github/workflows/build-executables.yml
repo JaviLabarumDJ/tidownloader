@@ -1,0 +1,137 @@
+name: Build Executables (Windows, macOS, Linux)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish as GitHub Release'
+        type: boolean
+        default: true
+      release_tag:
+        description: 'Release tag (if not triggered by tag)'
+        type: string
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            artifact_name: tidownloader-linux-x86_64
+            archive_ext: tar.gz
+          - os: windows-latest
+            arch: x86_64
+            artifact_name: tidownloader-windows-x86_64
+            archive_ext: zip
+          - os: macos-latest
+            arch: arm64
+            artifact_name: tidownloader-macos-arm64
+            archive_ext: zip
+          - os: macos-13
+            arch: x86_64
+            artifact_name: tidownloader-macos-x86_64
+            archive_ext: zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+
+      - name: Build executables with PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean tidownloader.spec
+
+      - name: Package artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package
+          Copy-Item dist/tidownloader.exe package/
+          Copy-Item dist/tidownloader-web.exe package/
+          Copy-Item README.md package/
+          Compress-Archive -Path package/* -DestinationPath "${{ matrix.artifact_name }}.${{ matrix.archive_ext }}"
+
+      - name: Package artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p package
+          cp dist/tidownloader package/
+          cp dist/tidownloader-web package/
+          cp README.md package/
+          tar -czvf "${{ matrix.artifact_name }}.${{ matrix.archive_ext }}" -C package .
+
+      - name: Package artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p package
+          cp dist/tidownloader package/
+          cp dist/tidownloader-web package/
+          cp README.md package/
+          cd package && zip -r "../${{ matrix.artifact_name }}.${{ matrix.archive_ext }}" .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          merge-multiple: true
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Release ${{ steps.tag.outputs.name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release_assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -84,6 +84,19 @@ The web UI lets you **pick a folder on your computer** using the browser's nativ
 
 ## 🚀 Quick start
 
+### Standalone Executables (Windows, macOS, Linux)
+
+No Python or Docker installation required:
+
+1. Download the executable for your OS from **[Releases](https://github.com/JaviLabarumDJ/tidownloader/releases)**:
+   - **Windows**: `tidownloader-windows-x86_64.zip`
+   - **Linux**: `tidownloader-linux-x86_64.tar.gz`
+   - **macOS (Apple Silicon M1/M2/M3/M4)**: `tidownloader-macos-arm64.zip`
+   - **macOS (Intel)**: `tidownloader-macos-x86_64.zip`
+2. Extract the archive.
+3. Run `tidownloader-web` (double-click on Windows / run in terminal on Linux & macOS) — it starts the server and opens your browser automatically at `http://localhost:8000`.
+4. Alternatively, use `tidownloader <urls>` for the direct command-line interface.
+
 ### Docker Compose (recommended)
 
 ```bash

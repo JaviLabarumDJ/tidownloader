@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import re
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -395,14 +399,28 @@ def create_app(
     return app, worker
 
 
+def _default_paths() -> tuple[Path, Path, Path, Path]:
+    data_dir = Path("/data")
+    downloads_dir = Path("/downloads")
+    if Path("/.dockerenv").exists() or (data_dir.is_dir() and os.access(data_dir, os.W_OK)):
+        return downloads_dir, data_dir / "queue.db", data_dir / "session", data_dir / "config.json"
+
+    base_dir = Path.home() / ".config" / "tidownloader"
+    local_downloads = Path("./downloads").resolve()
+    return local_downloads, base_dir / "queue.db", base_dir / "session", base_dir / "config.json"
+
+
 def main(argv: list[str] | None = None) -> int:
+    def_dl, def_queue, def_session, def_cfg = _default_paths()
+
     parser = argparse.ArgumentParser(prog="tidownloader-web")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--download-dir", default="/downloads")
-    parser.add_argument("--queue-db", default="/data/queue.db")
-    parser.add_argument("--session-dir", default="/data/session")
-    parser.add_argument("--config", default="/data/config.json")
+    parser.add_argument("--download-dir", default=str(def_dl))
+    parser.add_argument("--queue-db", default=str(def_queue))
+    parser.add_argument("--session-dir", default=str(def_session))
+    parser.add_argument("--config", default=str(def_cfg))
+    parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args(argv)
 
@@ -417,6 +435,17 @@ def main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config)
 
     app, worker = create_app(download_dir, queue_db, session_dir, config_path)
+
+    if not Path("/.dockerenv").exists() and not args.no_browser:
+        def _open_browser() -> None:
+            time.sleep(1.0)
+            try:
+                host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+                webbrowser.open(f"http://{host}:{args.port}")
+            except Exception:
+                pass
+        threading.Thread(target=_open_browser, daemon=True).start()
+
     try:
         app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False, threaded=True)
     finally:
